@@ -1,0 +1,303 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  Ultimate SmartUploader Stack
+  - Cognito User Pool y App Client
+  - API Gateway REST con Cognito Authorizer
+  - Lambdas (API handler y worker)
+  - S3 Bucket para archivos
+  - DynamoDB para metadata
+  - SNS Topic y SQS Queue
+  - IAM Roles mínimos
+  - CloudWatch Logs y X-Ray habilitados
+  - Parámetros para Secrets Manager (placeholder)
+  # Nota: Aurora Serverless, Step Functions, CodePipeline y CloudFront se deben agregar aparte.
+
+Parameters:
+  CognitoUserPoolName:
+    Type: String
+    Default: SmartUploaderUserPool
+  CognitoAppClientName:
+    Type: String
+    Default: SmartUploaderAppClient
+  S3BucketName:
+    Type: String
+    Default: smart-uploader-bucket
+  DynamoDBTableName:
+    Type: String
+    Default: SmartUploaderMetadata
+  SNSTopicName:
+    Type: String
+    Default: SmartUploaderTopic
+  SQSQueueName:
+    Type: String
+    Default: SmartUploaderQueue
+  LambdaApiFunctionName:
+    Type: String
+    Default: SmartUploaderApiLambda
+  LambdaWorkerFunctionName:
+    Type: String
+    Default: SmartUploaderWorkerLambda
+
+Resources:
+
+  # -------------------
+  # Cognito User Pool
+  # -------------------
+  CognitoUserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: !Ref CognitoUserPoolName
+      AutoVerifiedAttributes:
+        - email
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 8
+          RequireUppercase: true
+          RequireLowercase: true
+          RequireNumbers: true
+          RequireSymbols: false
+
+  CognitoUserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      ClientName: !Ref CognitoAppClientName
+      UserPoolId: !Ref CognitoUserPool
+      GenerateSecret: false
+      ExplicitAuthFlows:
+        - ALLOW_USER_PASSWORD_AUTH
+        - ALLOW_REFRESH_TOKEN_AUTH
+        - ALLOW_CUSTOM_AUTH
+        - ALLOW_USER_SRP_AUTH
+
+  # -------------------
+  # S3 Bucket
+  # -------------------
+  UploadsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Ref S3BucketName
+      VersioningConfiguration:
+        Status: Enabled
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+  # -------------------
+  # DynamoDB Table
+  # -------------------
+  MetadataTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Ref DynamoDBTableName
+      AttributeDefinitions:
+        - AttributeName: file_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: file_id
+          KeyType: HASH
+      BillingMode: PAY_PER_REQUEST
+
+  # -------------------
+  # SNS Topic
+  # -------------------
+  UploadsSNSTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Ref SNSTopicName
+
+  # -------------------
+  # SQS Queue
+  # -------------------
+  UploadsSQSQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Ref SQSQueueName
+      VisibilityTimeout: 60
+      ReceiveMessageWaitTimeSeconds: 20
+
+  # -------------------
+  # IAM Roles
+  # -------------------
+
+  ApiLambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${LambdaApiFunctionName}-exec-role"
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: ApiLambdaPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:GetObject
+                Resource: !Sub "arn:aws:s3:::${S3BucketName}/*"
+              - Effect: Allow
+                Action:
+                  - dynamodb:PutItem
+                  - dynamodb:UpdateItem
+                Resource: !GetAtt MetadataTable.Arn
+              - Effect: Allow
+                Action:
+                  - sns:Publish
+                Resource: !Ref UploadsSNSTopic
+
+  WorkerLambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${LambdaWorkerFunctionName}-exec-role"
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: WorkerLambdaPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:UpdateItem
+                Resource: !GetAtt MetadataTable.Arn
+              - Effect: Allow
+                Action:
+                  - sqs:ReceiveMessage
+                  - sqs:DeleteMessage
+                  - sqs:GetQueueAttributes
+                Resource: !GetAtt UploadsSQSQueue.Arn
+
+  # -------------------
+  # Lambda Functions
+  # -------------------
+
+  ApiLambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Ref LambdaApiFunctionName
+      Runtime: python3.9
+      Handler: api.lambda_function.lambda_handler
+      Role: !GetAtt ApiLambdaExecutionRole.Arn
+      Code:
+        S3Bucket: your-code-bucket-name
+        S3Key: api-lambda-code.zip
+      Environment:
+        Variables:
+          BUCKET: !Ref S3BucketName
+          TABLE: !Ref DynamoDBTableName
+          TOPIC_ARN: !Ref UploadsSNSTopic
+      TracingConfig:
+        Mode: Active
+
+  WorkerLambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Ref LambdaWorkerFunctionName
+      Runtime: python3.9
+      Handler: workers.processor_lambda.lambda_handler
+      Role: !GetAtt WorkerLambdaExecutionRole.Arn
+      Code:
+        S3Bucket: your-code-bucket-name
+        S3Key: worker-lambda-code.zip
+      Environment:
+        Variables:
+          TABLE: !Ref DynamoDBTableName
+      TracingConfig:
+        Mode: Active
+      Events:
+        SQSEvent:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt UploadsSQSQueue.Arn
+            BatchSize: 10
+
+  # -------------------
+  # API Gateway REST API
+  # -------------------
+
+  ApiGatewayRestApi:
+    Type: AWS::ApiGateway::RestApi
+    Properties:
+      Name: SmartUploaderAPI
+
+  ApiGatewayResourceUpload:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      ParentId: !GetAtt ApiGatewayRestApi.RootResourceId
+      PathPart: upload
+      RestApiId: !Ref ApiGatewayRestApi
+
+  ApiGatewayMethodPostUpload:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref ApiGatewayRestApi
+      ResourceId: !Ref ApiGatewayResourceUpload
+      HttpMethod: POST
+      AuthorizationType: COGNITO_USER_POOLS
+      AuthorizerId: !Ref ApiGatewayAuthorizer
+      Integration:
+        IntegrationHttpMethod: POST
+        Type: AWS_PROXY
+        Uri: !Sub
+          - arn:aws:apigateway:${Region}:lambda:path/2015-03-31/functions/${LambdaArn}/invocations
+          - {
+              Region: !Ref "AWS::Region",
+              LambdaArn: !GetAtt ApiLambdaFunction.Arn
+            }
+
+  ApiGatewayAuthorizer:
+    Type: AWS::ApiGateway::Authorizer
+    Properties:
+      Name: CognitoAuthorizer
+      Type: COGNITO_USER_POOLS
+      IdentitySource: method.request.header.Authorization
+      RestApiId: !Ref ApiGatewayRestApi
+      ProviderARNs:
+        - !GetAtt CognitoUserPool.Arn
+
+  # Permissions for API Gateway to invoke the Lambda function
+  LambdaPermissionForApiGateway:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref ApiLambdaFunctionName
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGatewayRestApi}/*/POST/upload
+
+  # -------------------
+  # CloudWatch Log Group it created automatically for Lambda functions, but you can define it explicitly
+  # to set retention or other properties.
+  # -------------------
+  ApiLambdaLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${LambdaApiFunctionName}"
+      RetentionInDays: 14
+
+  WorkerLambdaLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${LambdaWorkerFunctionName}"
+      RetentionInDays: 14
+
+Outputs:
+  ApiGatewayInvokeUrl:
+    Description: "Invoke URL for API Gateway"
+    Value: !Sub "https://${ApiGatewayRestApi}.execute-api.${AWS::Region}.amazonaws.com/prod/upload"
