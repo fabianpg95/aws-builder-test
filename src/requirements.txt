@@ -1,0 +1,4 @@
+boto3
+requests
+pytest
+moto  # Para pruebas de AWS simuladas
