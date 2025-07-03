@@ -51,38 +51,112 @@ A fully serverless Python application using multiple AWS services to securely up
 
 ## 📂 Project Structure
 
-```java
+``` java
 │
-├── api/
-│   ├── lambda_function.py          # API Lambda handler
-│   ├── requirements.txt            # API dependencies
-│   └── utils.py                   # Helper utils (JWT validation, etc)
-│
-├── workers/
-│   ├── processor_lambda.py         # Worker Lambda for async processing
-│   └── requirements.txt            # Worker dependencies
+├── src/
+│   ├── api/
+│   │   ├── lambda_function.py        # API Lambda handler
+│   │   ├── requirements.txt          # API dependencies
+│   │   └── utils.py                  # Helper utils (JWT validation, etc)
+│   │
+│   └── workers/
+│       ├── processor_lambda.py       # Worker Lambda for async processing
+│       └── requirements.txt          # Worker dependencies
 │
 ├── frontend/
-│   ├── index.html                 # Frontend entry point
-│   ├── app.js                     # Frontend JS logic
-│   └── styles.css                 # Frontend styles
+│   ├── index.html                    # Dev version (for local testing)
+│   ├── app.js                        # Frontend JS logic
+│   └── styles.css                    # Frontend styles
+│
+├── cdn/
+│   ├── index.html                    # Production-ready minified frontend
+│   ├── app.js                        # Minified JS for S3/CDN
+│   └── styles.css                    # Minified CSS for S3/CDN
 │
 ├── templates/
-│   └── cloudformation.yaml        # Full infra CloudFormation template
+│   └── cloudformation.yaml           # Full infra CloudFormation template
 │
 ├── scripts/
-│   └── deploy.sh                  # Deployment script (setup venv, deploy)
+│   └── deploy.sh                     # Deployment script (setup venv, deploy)
 │
-├── .env                          # Environment variables for local dev
-└── README.md                     # This file
-
+├── .env                              # Environment variables for local dev
+└── README.md                         # This file
 ```
 ---
 
 ## 🛠️ Setup & Deployment
 
-### 1. Install Dependencies
+### Install Dependencies
 
 ```bash
 pip install -r src/requirements.txt
+```
 
+### Star localhost server
+```bash
+python3 -m http.server 8000
+```
+
+#### S3 - Steps for create S3 bucket from console commands.
+
+```bash
+# 1. Create S3 bucket with a unique name
+BUCKET_NAME=smartuploader-frontend-$(date +%s)
+aws s3api create-bucket \
+  --bucket $BUCKET_NAME \
+  --region us-east-2 \
+  --create-bucket-configuration LocationConstraint=us-east-2
+
+# 2. Enable static website hosting on the bucket
+aws s3 website s3://$BUCKET_NAME/ \
+  --index-document index.html \
+  --error-document index.html
+
+# 3. Make files public (bucket policy)
+aws s3api put-bucket-policy \
+  --bucket $BUCKET_NAME \
+  --policy "{
+    \"Version\": \"2012-10-17\",
+    \"Statement\": [{
+      \"Sid\": \"PublicReadGetObject\",
+      \"Effect\": \"Allow\",
+      \"Principal\": \"*\",
+      \"Action\": \"s3:GetObject\",
+      \"Resource\": \"arn:aws:s3:::$BUCKET_NAME/*\"
+    }]
+  }"
+
+# 4. Upload CDN-optimized frontend files with caching headers
+aws s3 sync ./cdn/ s3://$BUCKET_NAME/ \
+  --cache-control "public, max-age=31536000, immutable" \
+  --acl public-read
+
+# 5. Output public frontend URL
+echo "✅ Your static site is live at:"
+echo "https://$BUCKET_NAME.s3-website.us-east-2.amazonaws.com"
+
+# Expected result:
+https://smartuploader-frontend-1725037267.s3-website.us-east-2.amazonaws.com
+  ```
+
+
+
+#### List buckets of all profiles:
+
+```bash
+aws s3api list-buckets --query "Buckets[].Name"
+```
+
+#### List buckets that belong to my profile:
+
+```bash
+aws s3api list-buckets --query "Buckets[].Name" --profile fabianpg95
+```
+
+#### Remove all the buckets:
+
+```bash
+aws s3 rm s3://smartuploader-frontend-1751494811 --recursive
+aws s3 rm s3://smartuploader-frontend-1751494910 --recursive
+aws s3 rm s3://smartuploader-frontend-1751510870 --recursive
+```

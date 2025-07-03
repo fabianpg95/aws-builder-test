@@ -11,3 +11,6 @@ pip install -r src/requirements.txt
 
 echo "✅ Done. Virtual environment is active and dependencies are installed."
 echo "🧪 To deactivate the environment, run: deactivate"
+
+
+http://smartuploader-frontend-1751494811.s3.amazonaws.com/
