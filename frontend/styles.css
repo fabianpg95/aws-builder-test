@@ -1,38 +1,91 @@
 body {
-  font-family: Arial, sans-serif;
-  max-width: 600px;
-  margin: 2rem auto;
-  background-color: #f9f9f9;
-  color: #333;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  background: linear-gradient(to right, #1e3c72, #2a5298);
+  color: #fff;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+}
+
+.container {
+  background: #ffffff10;
+  backdrop-filter: blur(10px);
+  border-radius: 12px;
+  padding: 2rem;
+  box-shadow: 0 8px 20px rgba(0,0,0,0.25);
+  width: 90%;
+  max-width: 500px;
+  text-align: center;
 }
 
 h1 {
-  text-align: center;
-  color: #2c3e50;
+  margin-bottom: 2rem;
+  font-size: 2rem;
+  color: #f1f1f1;
 }
 
-input[type="file"] {
-  display: block;
-  margin: 1rem 0;
+.upload-box {
+  border: 2px dashed #ffffff80;
+  padding: 2rem;
+  border-radius: 10px;
+  background-color: #ffffff05;
+  transition: background-color 0.3s ease;
+  cursor: pointer;
+}
+
+.upload-box:hover {
+  background-color: #ffffff15;
+}
+
+.upload-label {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  color: #fff;
+  font-size: 1rem;
+}
+
+.upload-label i {
+  font-size: 2rem;
+  margin-bottom: 0.5rem;
 }
 
 button {
-  padding: 0.75rem;
+  margin-top: 1.5rem;
   width: 100%;
-  background-color: #3498db;
-  border: none;
+  padding: 0.75rem;
+  background-color: #00c6ff;
   color: white;
   font-size: 1rem;
+  border: none;
+  border-radius: 8px;
   cursor: pointer;
-  border-radius: 4px;
-  transition: background-color 0.3s ease;
+  font-weight: bold;
+  transition: background 0.3s ease;
 }
 
 button:hover {
-  background-color: #2980b9;
+  background-color: #0084d6;
 }
 
 #status {
   margin-top: 1rem;
   font-weight: 600;
+  color: #ffeb3b;
+  word-break: break-word;
+  animation: fadeIn 0.3s ease-in-out;
 }
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+/* --- a/file:///Users/fabian.portillo/Projects/aws-builder-test/frontend/styles.css */
+/* +++ b/file:///Users/fabian.portillo/Projects/aws-builder-test/frontend/styles.css */
+/* @@ -1,0 +1,46 @@ */
+/* This file contains the styles for the frontend application */
+/* It includes styles for the body, container, headings, upload box, buttons, and status messages */
+/* The styles are designed to create a modern, clean, and user-friendly interface */  

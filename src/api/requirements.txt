@@ -1,3 +1,5 @@
 boto3
 python-jose[cryptography]  # Para validación JWT (opcional)
 requests
+PyJWT==2.8.0
+cryptography
